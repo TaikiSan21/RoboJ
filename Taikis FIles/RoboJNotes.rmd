@@ -1,0 +1,77 @@
+# RoboJ Notes
+
+Deploy/Retrieval - How to incorporate in general for future. Organizing by DB is most
+logical way to separate drifts (and is easiest way in files()$recordings)
+
+TallySnapshot is currently defined by wav files because all wavs are 2 minute 
+recordings (continuous or DCycle), in future this could be different
+
+Tehres a double correciotn in Station 1 times - +10.8 on ==1, then also +7 on <=6
+
+## Questions for 3/28
+
+Comparison issues - Jay's UIDs got rounded down 
+
+Best way to compare results - able to run det history and est det fun
+
+Plan for Jeff's code - am I working on these too?
+
+Need to tidy up Jay's function to run smoother, but so far everything
+works from eventClicks.csv %>% doAngleCorrection() %>% calcModalAngle()
+
+ERDDAP/HYCOM model could be changed every time we ping by updating their models
+and stuff, we need to save something to document this. Save SSPs used for each
+drift somewhere.
+
+Figure out a way to let people point to individual files. Or to SSP or to angles or
+something. So that can compare results, or archive past times and point to those files.
+
+Run on CCES? See how much
+
+
+## Generaliztion Notes
+
+DriftNum will turn into database
+
+CompTime for binning - by binary file or 2 minutes of hour? biary file time is 
+probably most consistent / doesn't need any thinking, but could be bad if
+continuous data unintentionally cutting into less than desired size at
+transition of binaries
+
+Obvi no time fixing
+
+Is the GT/LT60 shit doing anything???
+
+How to assign recorder type
+
+I think the det function is taking a dump on my memory and may not finish
+
+MultipleAngles, Analyst, and ICI all from Comment dont need
+
+## Final Needs for generalizatio
+
+### Detection History
+FileDateTime, MeanAngle, nClicks, eventType, DeltaMin, Station(to filter > 22, later DB is ok),
+Recorder, EventId, 
+
+Theres something in here about filling in det history properly for any duty cyclers
+
+### Detection function
+
+nClicks, eventType, Recorder, Station (db is fine), MeanAngle
+
+## Next Jeff Steps
+
+Christ, everything is hard coded values with references to emails. FML.
+
+## Running on CCES
+
+First run all in PAMpal
+Should be able to remove all functions???
+Add GPS to DBs
+How recorder??
+How Station/DriftNum??
+Duty cyclye or continuoys?? both
+
+
+Duty cycles are different

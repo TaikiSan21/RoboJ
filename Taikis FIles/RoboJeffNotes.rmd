@@ -1,0 +1,44 @@
+# RoboJeff notes
+
+OVERALL PROBLEM - we have to account for duty cycle bins that are not a multiple
+of snapshot length
+
+## Availability Estimation 
+
+Inputs: DetectionHistoryWithAngles.csv, dive depth, hpDepth, truncDist
+
+Outputs:
+
+### EH-dataPrep
+
+Hard coded dropping stations 6&15 for duty cycle issues
+### EH-GOF
+Oh dear...assumes you have EH-dataPrep variables in memory
+### EH-model.whatever
+
+### EH-runBUGS
+
+## Density Estimation
+
+Inputs: truncDist, diveDepth, CA current study area???, snapshots per station, station depths, recorder types, 
+ZCeventFileswithAngles.csv
+
+Outputs:
+
+### encounterRate-dataPrep
+
+Comment that input angles are 180(down) 90(horiz), they get changed here to 90(horiz) 0(down) wiht 180-angle
+
+### encounterRate-GOF
+
+### encoutnerRate-model whatever
+
+Effective search radius and CV are hardcoded in here, also time avail from EH step (??), group size info, dive depth period
+
+### encoutnerRate-runBUGS
+
+###### NOTES AFTER JEFF CALL #####
+
+Make a matrix with everything where we define the meaning of each cell - 2 on 3 off etc. If this means differnet drifts
+have different number of rows we can just extend the shorter ones with -1s marking the rest as off. SO we can still
+always have a matrix with same number of columns.
