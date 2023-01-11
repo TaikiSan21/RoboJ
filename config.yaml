@@ -1,0 +1,7 @@
+# config for roboj analysis
+snapshot: 2
+maxTime: 61.999
+meanDepth: 1217
+sdDepth: 354
+hpDepth: 110
+truncDist: 4000
