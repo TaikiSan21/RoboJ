@@ -46,7 +46,7 @@ OB.params <- c("v.mean", "er.mean",                                 # effective 
                "s", "g0")                                           # ancillary parameters
 
 ##### Run BUGS analysis #####
-out <- bugs(data=erData, inits=NULL, parameters.to.save=OB.params, model.file=modelFilename,
+out <- bugs(data=bugs.data.ER, inits=NULL, parameters.to.save=OB.params, model.file=modelFilename,
             n.chains=mcmc.specs$nc, n.iter=mcmc.specs$ni, n.burnin=mcmc.specs$nb,
             n.thin=mcmc.specs$nt, saveExec=FALSE, debug=TRUE, OpenBUGS.pgm=NULL,
             working.directory=getwd(), clearWD=TRUE, bugs.seed=2)

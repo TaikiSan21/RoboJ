@@ -24,7 +24,7 @@ station.depth = 0.113  # mean depth of hydrophone array (km)
 TRUNC = 4  # truncation distance (km)
 
 ##### Read in data file #####
-ehdata = read.csv("DetectionHistoryWithAngles.csv")
+ehdata = read.csv("Jeffs Files/AvailabilityEstimation/DetectionHistoryWithAngles.csv")
 
 ##### Data manipulation #####
 # Reduce entire dataframe to matrix with unnecessary fields and records removed
@@ -34,15 +34,15 @@ ehdata = read.csv("DetectionHistoryWithAngles.csv")
   intMatrix[intMatrix==-1] <- NA  # if duty-cycle-off was indicated by -1 in the csv, this line changes those to NAs (we want NAs for occasions where detectors were off)
   intMatrix = intMatrix[!ehdata$Station==6 & !ehdata$Station==15,]  # Remove rows for DASBRS 6 and 15, due to duty cycling errors on these DASBRs
 
-##### Create other matrrix objects ##### 
+##### Create other matrrix objects #####
 # empty matrices of correct dimension
-  detMatrix = effMatrix = posAngleMatrix = intMatrix  
+  detMatrix = effMatrix = posAngleMatrix = intMatrix
 # binary detection matrix (changes detection angles to 1s, changes NAs to 0s)
   detMatrix[intMatrix>0]=1;detMatrix[is.na(intMatrix)]=0  # if duty-cycle off are NAs in the csv:  matrix that changes angles to 1 (binary indicator of detection) and 0s otherwise
 # effort matrix (1 if detector on, 0 if off due to duty cycling)
   effMatrix[!is.na(effMatrix)]=1; effMatrix[is.na(effMatrix)]=0  # (if duty-cycle off are NAs in the csv) matrix of 1s for duty-cyle on, 0s for duty-cycle off
 # matrix of positive measure angles (matrix has angles to positive detections and NAs otherwise)
-  posAngleMatrix[posAngleMatrix==0] = NA  
+  posAngleMatrix[posAngleMatrix==0] = NA
 # in a new object, replace 1s from detMatrix with the interval of detection (used for calculating covariate "lastInt" below)
   detMatrix2 = detMatrix
    for(i in 1:nrow(detMatrix)){
@@ -81,12 +81,12 @@ ehdata = read.csv("DetectionHistoryWithAngles.csv")
         }
     # BUGS data object
       bugs.data.EH = list(nocc=nocc, nind=ndives, eh=detMatrix[DetDist0.km<TRUNC,], dcyc=effMatrix[DetDist0.km<TRUNC,])
-  
+
 
 #####################################################
 # Generate (and save) some plots and data summaries #
-#####################################################     
-      
+#####################################################
+
 ##### set working directory for where plots will be saved #####
 setwd("C:/jeff/NOAA/PASCAL/analysis/finalAnalysisDataAndCode-March2021/dataSummaryPlots")
 

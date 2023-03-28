@@ -18,9 +18,9 @@ source("EH-dataPrep.R")
 
 ##### Set BUGS MCMC parameters #####
 mcmc.specs <- list(
-  ni = 5000,  # chain length, including burn-in
+  ni = 10000,  # chain length, including burn-in
   nt = 2,      # thinning rate
-  nb = 1000,   # burn-in (e.g., 4000 * thin-rate 5 = 20K samples per chain)
+  nb = 2500,   # burn-in (e.g., 4000 * thin-rate 5 = 20K samples per chain)
   nc = 2       # number of chains
 )
 
@@ -30,22 +30,33 @@ OB.params = c("phi1", "p1",                                     # CJS parameters
               "mean.availtime.min" #, "mean.availtime.ints",     # Mean availability time (this is what we want)
               # "med.availtime.min", "med.availtime.ints"        # Median availability time
               )
-
-##### Source model file #####
-source("EH-model p(.) phi(.).R")
 source(here('availability_estimation', 'EH-model_unequal.R'))
 
 ##### Source initial-values file #####
 # No initial-values file created.  Let BUGS set own random initial values by specifying inits=NULL in bugs() function.
-
+ehData$nOcc <- 35 #changing from 35 to see if different
 ##### Run BUGS analysis #####
-out <- bugs(data=ehData, inits=NULL,
+out <- bugs(data=testEh, inits=NULL,
             parameters.to.save=OB.params,
             model.file=modelFilename, n.chains=mcmc.specs$nc, n.iter=mcmc.specs$ni, n.burnin=mcmc.specs$nb, n.thin=mcmc.specs$nt,
             saveExec=FALSE, debug=TRUE, OpenBUGS.pgm=NULL, working.directory=getwd(), clearWD=TRUE)
-
+# 14.03 MAT
+# COMPARISON
+ehOld <- ehData
+ehOld$nocc <- 31
+names(ehOld) <- c('nocc', 'nind', 'eh', 'dcyc', 'intlen', 'nmin')
+OB.params = c("phi", "p",                                     # CJS parameters
+              "mean.availtime.min" , "mean.availtime.ints"     # Mean availability time (this is what we want)
+              # "med.availtime.min", "med.availtime.ints"        # Median availability time
+)
+source(here('Jeffs Files', 'AvailabilityEstimation', "EH-model p(.) phi(.).R"))
+out <- bugs(data=bugs.data.EH, inits=NULL,
+            parameters.to.save=OB.params,
+            model.file=modelFilename, n.chains=mcmc.specs$nc, n.iter=mcmc.specs$ni, n.burnin=mcmc.specs$nb, n.thin=mcmc.specs$nt,
+            saveExec=FALSE, debug=TRUE, OpenBUGS.pgm=NULL, working.directory=getwd(), clearWD=TRUE)
+# 14.55 MAT
 ##### Save the BUGS output.  Use load() to read these back in at a later date #####
-save(out, file = "out/MCMCsamples_EH_p(.)phi(.).Rdata")  # phi(.) model
+saveRDS(out, file = here('availability_estimation', 'MCMCsamples_EH.rds'))#"out/MCMCsamples_EH_p(.)phi(.).Rdata")  # phi(.) model
 #load("out/MCMCsamples_EH_p(.)phi(.).Rdata")  # make sure higher-level working directory is set (above)
 
 

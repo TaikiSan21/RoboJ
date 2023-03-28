@@ -1,7 +1,55 @@
 # config for roboj analysis
 snapshot: 2
-maxTime: 61.999
-meanDepth: 1217
-sdDepth: 354
+maxTime: 62
+animalDepthMean: 1217
+animalDepthSd: 354
 hpDepth: 110
 truncDist: 4000
+
+
+# sd received angle errors (degrees)
+sdAngleErr: .59
+ddpMean: 191.4
+ddpSd: 28.2
+gsizeMean: 1.9
+gsizeSd: .13
+studyArea: 1057925
+stationPattern: '^(DS[0-9]{1,2}).*'
+
+ehMcmcSpecs:
+    ni: 10000  # chain length, including burn-in
+    nt: 2      # thinning rate
+    nb: 2500   # burn-in (e.g., 4000 * thin-rate 5 = 20K samples per chain)
+    nc: 2
+
+ehParams:
+    - 'p1'
+    - 'phi1'
+    - 'mean.availtime.min'
+
+erMcmcSpecs:
+    ni: 200000  # chain length, including burn-in
+    nt: 5     # thinning rate
+    nb: 50000   # burn-in
+    nc: 2       # number of chains
+
+erParams:
+    - "v.mean" # effective search area and radius
+    - "er.mean"
+    - "logDgrp.hyper" # random effect parameters for log-density
+    - "logDgrp.sig"
+    - "logDgrp" # parameters for individual DASBRs
+    - "logDgrp.err"
+    - "Dper1000"
+    - "mu"
+    - "mean.of.Errs" # descriptive summary stats for individuals DASBR estimates (model checks)
+    - "SD.of.Errs"
+    - "mean.of.logDgrp"
+    - "Dgrp.mean" # mean density and abundance for the study area (use)
+    - "D.mean.per1000"
+    - "N"
+    - "Dgrp.mean.II" # mean density and abundance for the study area, alternate (do not use)
+    - "D.mean.per1000.II"
+    - "N.II"
+    - "s"
+    - "g0"

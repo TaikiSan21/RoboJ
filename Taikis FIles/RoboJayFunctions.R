@@ -5,7 +5,7 @@ library(dplyr)
 library(mgcv)
 library(PAMmisc)
 # Updated 4-20-2022 7pm
-formatClickDf <- function(x, stationPattern='(.*)\\.OE.*|\\.DGL.*', pascal=FALSE) {
+formatClickDf <- function(x, stationPattern='(.*)', pascal=FALSE) {
     clicks <- getClickData(x)
     # dbs <- sapply(events(x), function(e) gsub('\\.sqlite3$', '', basename(files(e)$db)))
     # dbDf <- data.frame(db=dbs, eventId=names(dbs))
@@ -18,7 +18,7 @@ formatClickDf <- function(x, stationPattern='(.*)\\.OE.*|\\.DGL.*', pascal=FALSE
                                       'species', 'eventId', 'Latitude', 'Longitude', 'db'))) %>%
         distinct() %>%
         mutate(angle = angle * 180 / pi,
-               station = gsub(stationPattern, '\\1', eventId)) %>%
+               station = gsub(stationPattern, '\\1', db)) %>%
         group_by(eventId) %>%
         mutate(nClicks = n()) %>%
         ungroup()
@@ -142,14 +142,14 @@ fmtEventId <- function(x) {
     id
 }
 
-createSSPList <- function(x, time=3600*24*1, file=NULL, pascal=FALSE) {
+createSSPList <- function(x, time=3600*24*1, file=NULL, pascal=FALSE, timeout=240) {
     if(pascal) {
         x <- rename(x, c('Latitude'='lat', 'Longitude'='long', 'UTC'='ClickDateTime'))
     }
     sspCoords <- bind_rows(lapply(split(x, x$sspGroup), function(s) {
         s[which.min(s$UTC)[1], c('UTC','Latitude', 'Longitude', 'sspGroup')]
     }))
-    sspList <- createSSP(sspCoords, dropNA=TRUE)
+    sspList <- createSSP(sspCoords, dropNA=TRUE, timeout=timeout)
     names(sspList) <- sspCoords$sspGroup
     if(!is.null(file)) {
         saveRDS(sspList, file)
@@ -270,7 +270,9 @@ markSnapshotId <- function(x, snapshot=2, pascal=FALSE) {
     x$snapIx <- NULL
     bind_rows(lapply(split(x, x$station), function(s) {
         bind_rows(lapply(split(s, s$eventId), function(e) {
-            isCont <- grepl('/0$', e$dutyCycle[1])
+            # isCont <- grepl('/0$', e$dutyCycle[1])
+            isCont <- FALSE # testing station 6 issues. Is there a good reason to do other
+            # split? I think we can double count either way...
             if(isCont) {
                 e$compTime <- floor_date(min(e$UTC), unit=paste0(snapshot, 'min'))
             } else {
@@ -299,7 +301,7 @@ markSnapshotId <- function(x, snapshot=2, pascal=FALSE) {
 
             e$diffMin <- as.numeric(difftime(e$UTC, e$compTime, units='mins'))
             e$snapIx <- floor(e$diffMin / snapshot)
-            e$snapTime <- e$compTime + e$snapIx * 60
+            e$snapTime <- e$compTime + e$snapIx * 60 * snapshot
             e$snapIx <- e$snapIx + 1 + ix
             ix <<- max(e$snapIx)
             # e$compTime <- NULL
@@ -394,7 +396,8 @@ createSimLikeFun <- function(nSim=1e6, model=c('HN', 'C_HN'), depthDistr=c('log-
                              meanDepth=1217,sdDepth=354, sdAngleErr=0.59,
                              mainTitle='', truncAngle=NULL, hpDepth=110, truncDist=4e3,
                              par1Lim=c(1e3, 3e3), par2Lim=c(-2, 28)) {
-    maxHRange<- 8000
+    # maxHRange<- 8000
+    maxHRange <- truncDist * 2
     if(is.null(truncAngle)) {
         truncAngle<- atan(truncDist/(meanDepth-hpDepth))*180/pi
     }
@@ -510,7 +513,7 @@ newEstDetFunction <- function(eventAngles,
                               truncDist = 4000,
                               sdAngleErr = 0.59,
                               depthDistr = 'log-normal',
-                              range = c(1000, 3000),
+                              range = c(750, 3000),
                               model = 'C_HN',
                               outDir= '.',
                               doJackknife = FALSE,
@@ -782,7 +785,8 @@ createDetectionHistory <- function(ea, maxTime=61.999, meanDepth =1217, sdDepth=
     diveStart= ea$fileDateTime[1]
     dNum= 1
     for(i in 2:length(ea$diveNum)) {
-        ea$diveTime[i]= as.numeric(difftime(ea$fileDateTime[i],diveStart,units="mins"))
+        # ea$diveTime[i]= as.numeric(difftime(ea$fileDateTime[i],diveStart,units="mins"))
+        ea$diveTime[i]= as.numeric(difftime(ea$UTC[i],diveStart,units="mins"))
         # browser()
         if((ea$station[i] != ea$station[i-1]) ||
            (ea$diveTime[i] > maxTime) ||
@@ -834,31 +838,50 @@ createDetectionHistory <- function(ea, maxTime=61.999, meanDepth =1217, sdDepth=
             }
         }
     }
-
+    nDataOff <- 0
+    whichDataOff <- numeric(0)
     # for instruments on duty cycle, indicate when detections were not possible with -1
     for(i in 1:nrow(detectionHistory)) {
         stationOff <- markOffCycle(ea$dutyCycle[ea$station == station[i]][1], snapshot=snapshot, ncol=nCols, maxTime=maxTime)
         # if(i == 8) browser()
         # duty cycle might be offset if multiple snapshots in one on cycle depending on
         # which one first deteciton is in
+
         if(any(stationOff)) {
             nOn <- min(which(stationOff)) - 1
             if(nOn > 1) {
                 # cat('\n', i)
                 # browser()
-                tryOn <- lapply(1:nOn, function(n) {
-                    c(rep(0, n-1), detectionHistory[i, 1:(ncol(detectionHistory)-n+1)])
+                # move the duty ycle marks instead of the data
+                tryOff <- lapply(0:(nOn-1), function(n) {
+                    markOffCycle(ea$dutyCycle[ea$station == station[i]][1], snapshot=snapshot, ncol=nCols, maxTime=maxTime, shift=n)
                 })
-                nDropped <- sapply(tryOn, function(t) {
-                    sum(t[stationOff] != 0)
+                nDropped <- sapply(tryOff, function(o) {
+                    sum(detectionHistory[i, o] != 0)
                 })
-                detectionHistory[i, ] <- tryOn[[which.min(nDropped)]]
-            }
+                stationOff <- tryOff[[which.min(nDropped)]]
 
+                # tryOn <- lapply(1:nOn, function(n) {
+                #     c(rep(0, n-1), detectionHistory[i, 1:(ncol(detectionHistory)-n+1)])
+                # })
+                # nDropped <- sapply(tryOn, function(t) {
+                #     sum(t[stationOff] != 0)
+                # })
+                # detectionHistory[i, ] <- tryOn[[which.min(nDropped)]]
+            }
+            # mark how many are getting coverd up as "off cycle"
+            thisDataOff <- sum(detectionHistory[i, stationOff] != 0)
+            if(thisDataOff > 0) {
+                whichDataOff <- c(whichDataOff, i)
+            }
+            nDataOff <- nDataOff + thisDataOff
             detectionHistory[i, stationOff] <- -1
         }
     }
-
+    if(nDataOff > 0) {
+        warning(nDataOff, ' detections were marked as "off duty cycle"',
+                ' in rows ', paste0(whichDataOff, collapse=', '))
+    }
     # create dataframe from detection history matrix and save as csv file
     # detectionHistoryOut= data.frame(station,time,eventId,recorder,detectionHistory)
     detHistDf <- data.frame(station, time, eventId, recorder)
@@ -946,7 +969,7 @@ dcToColMap <- function(x, snapshot, ncol) {
     rep(oneDc, length.out=ncol)
 }
 
-markOffCycle <- function(dutyCycle='2/8', snapshot=2, ncol, maxTime) {
+markOffCycle <- function(dutyCycle='2/8', snapshot=2, ncol, maxTime, shift=0) {
     # maxIx <- ceiling(maxTime/snapshot)
     dcSplit <- strsplit(dutyCycle, '/')[[1]]
     on <- as.numeric(dcSplit[1])
@@ -962,6 +985,10 @@ markOffCycle <- function(dutyCycle='2/8', snapshot=2, ncol, maxTime) {
     )
     if(off %% snapshot != 0) {
         oneCyc <- c(oneCyc, TRUE)
+    }
+    if(shift > 0 &&
+       shift < on/snapshot) {
+        oneCyc <- c(oneCyc[(shift+1):length(oneCyc)], oneCyc[1:shift])
     }
     # cycleMark <- rep(
     #     c(rep(FALSE, on/snapshot), # ons marked as 1s
@@ -1047,7 +1074,7 @@ formatDeployDetails <- function(x, format=c('%m/%d/%Y %H:%M:%OS', '%m-%d-%Y %H:%
     x
 }
 
-tallySnapshots <- function(rec, eventSummary, recorderInfo, snapshot=2) {
+tallySnapshots <- function(rec, stationPattern, recorderInfo, snapshot=2) {
     if(is.AcousticStudy(rec)) {
         rec <- files(rec)$recordings
         if(is.null(rec)) {
@@ -1067,15 +1094,17 @@ tallySnapshots <- function(rec, eventSummary, recorderInfo, snapshot=2) {
     # rec$db <- gsub('\\.sqlite3$', '', basename(rec$db))
     rec$db <- basename(rec$db)
     # browser()
-    rec <- left_join(rec, distinct(eventSummary[c('station', 'db')]), by='db')
+    # rec <- left_join(rec, distinct(eventSummary[c('station', 'db')]), by='db')
+    rec$station <- gsub(stationPattern, '\\1', rec$db)
     naStation <- is.na(rec$station)
     if(any(naStation)) {
         nomatchDb <- unique(rec$db[naStation])
         rec <- rec[!naStation, ]
-        nomatchSta <- unique(eventSummary$station)[!(unique(eventSummary$station) %in% unique(rec$station))]
+        # nomatchSta <- unique(eventSummary$station)[!(unique(eventSummary$station) %in% unique(rec$station))]
         warning('Not able to match station names to db names for databases ',
                 paste0(nomatchDb, collapse=', '), '\n',
-                'Stations ', paste0(nomatchSta, collpase=', '), ' were not paired with wav file data.')
+                # 'Stations ', paste0(nomatchSta, collpase=', '), ' were not paired with wav file data.')
+                'These were not paired with wav file data.')
     }
     # filter by start/end
     rec <- bind_rows(lapply(split(rec, rec$station), function(s) {
@@ -1330,12 +1359,13 @@ fast_intlen <- function(int1, int2) {
     spans
 }
 
-plotDetFun <- function(param, model=c('C_HN', 'HN'), add=FALSE, col='black', lwd=1, title=NULL) {
+plotOneDetFun <- function(param, model=c('C_HN', 'HN'), add=FALSE,
+                          col='black', lwd=1, title=NULL, truncDist=4e3) {
     model <- match.arg(model)
     if(model == 'HN') {
         param[2] <- 0
     }
-    ranges <- seq(from=0, to=4e3, by=10)
+    ranges <- seq(from=0, to=truncDist, by=10)
     prob <- 1 - (1-exp(-.5*(ranges/param[1])^2))^(exp(param[2]))
     if(add) {
         lines(x=ranges, y=prob, col=col, lwd=lwd)
@@ -1346,5 +1376,14 @@ plotDetFun <- function(param, model=c('C_HN', 'HN'), add=FALSE, col='black', lwd
         } else {
             title(title)
         }
+    }
+}
+
+plotDetFun <- function(detFun, lwd=1, truncDist=4e3, title=NULL) {
+    colors <- c('black', 'red', 'blue', 'darkgreen', 'purple')
+    for(i in seq_along(detFun)) {
+        params <- detFun[[i]]$maxLikeParam
+        model <- ifelse(length(params) == 2, 'C_HN', 'HN')
+        plotOneDetFun(params, model, add= i>1, col=colors[i], lwd=lwd, title=title, truncDist=truncDist)
     }
 }

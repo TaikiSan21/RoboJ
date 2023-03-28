@@ -37,9 +37,9 @@ pascal <- FALSE
 # stationPattern is a REGEXP to turn event names into a single "Station" name that is
 # easier to write down.
 # Default gets the name of the database from PAMpal's eventIds that are created when processing mode='db'
-defaultPat <- '(.*)\\.OE.*|\\.DGL.*'
+defaultPat <- '(.*)'
 # This should convert CCES to single numbers
-CCESPat <- '.*Drift-([0-9]{1,2})_.*[\\.OE|\\.DGL][0-9]+$'
+CCESPat <- '.*Drift-([0-9]{1,2})_.*'
 eventClicks <- formatClickDf(data, pascal=pascal, stationPattern = defaultPat)
 
 # Preps for the soundspeed profile download - marks detections into different groups
@@ -97,7 +97,7 @@ detHist <- createDetectionHistory(eventSummary)
 # This will take quite a long time. To test and make sure things just run you can set doJackknife = FALSE and nSim = 1e6,
 # but for full run (> 1hr ) we want doJackknife=TRUE and nSim=1e7
 detFunction <- newEstDetFunction(eventSummary, subsetCol = 'recorder',
-                                 doJackknife = TRUE, jk_nSamples = 5, nSim=1e7, progress=TRUE)
+                                 doJackknife = TRUE, jk_nSamples = 25, nSim=1e7, progress=TRUE)
 
 saveRDS(eventSummary, file.path(outPath, 'eventSummary.rds'))
 saveRDS(detFunction, file.path(outPath, 'detFunction.rds'))
