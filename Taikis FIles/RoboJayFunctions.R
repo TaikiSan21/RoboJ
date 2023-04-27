@@ -838,8 +838,11 @@ createDetectionHistory <- function(ea, maxTime=61.999, meanDepth =1217, sdDepth=
             }
         }
     }
-    nDataOff <- 0
+    nEvOff <- 0
     whichDataOff <- numeric(0)
+    whichEvOff <- character(0)
+    nDetOff <- 0
+    debugDf <- list()
     # for instruments on duty cycle, indicate when detections were not possible with -1
     for(i in 1:nrow(detectionHistory)) {
         stationOff <- markOffCycle(ea$dutyCycle[ea$station == station[i]][1], snapshot=snapshot, ncol=nCols, maxTime=maxTime)
@@ -870,17 +873,31 @@ createDetectionHistory <- function(ea, maxTime=61.999, meanDepth =1217, sdDepth=
                 # detectionHistory[i, ] <- tryOn[[which.min(nDropped)]]
             }
             # mark how many are getting coverd up as "off cycle"
-            thisDataOff <- sum(detectionHistory[i, stationOff] != 0)
-            if(thisDataOff > 0) {
+            hasData <- detectionHistory[i, ] != 0
+            thisDataOff <- hasData & stationOff
+            
+            # thisDataOff <- sum(detectionHistory[i, stationOff] != 0)
+            if(any(thisDataOff)) {
+                offDf <- ea[ea$diveNum == i, ]
+                offDf$markedOff <- FALSE
+                offEvIx <- which(which(hasData) %in% which(thisDataOff))
+                offEv <- ea$eventId[ea$diveNum == i][offEvIx]
+                offDf$markedOff[offEvIx] <- TRUE
+                nDetOff <- nDetOff + sum(ea$nClicks[ea$diveNum == i][offEvIx])
                 whichDataOff <- c(whichDataOff, i)
+                whichEvOff <- c(whichEvOff, unique(offEv))
+                debugDf[[length(debugDf)+1]] <- offDf
             }
-            nDataOff <- nDataOff + thisDataOff
+            nEvOff <- nEvOff + sum(thisDataOff)
             detectionHistory[i, stationOff] <- -1
         }
     }
-    if(nDataOff > 0) {
-        warning(nDataOff, ' detections were marked as "off duty cycle"',
-                ' in rows ', paste0(whichDataOff, collapse=', '))
+    if(nEvOff > 0) {
+        # warning(nDetOff, ' detections were marked as "off duty cycle"',
+                # ' in dive number ', paste0(whichDataOff, collapse=', '))
+        warning(nDetOff, ' detections marked as "off duty cycle"',
+                ' from ', nEvOff, ' events. Check $debug in the output.')
+        
     }
     # create dataframe from detection history matrix and save as csv file
     # detectionHistoryOut= data.frame(station,time,eventId,recorder,detectionHistory)
@@ -890,7 +907,12 @@ createDetectionHistory <- function(ea, maxTime=61.999, meanDepth =1217, sdDepth=
     # detectionHistoryOut= list(dhDf = detHistDf, dhMat = detectionHistory)
     #### OUTPUT FOR JEFF EH-dataPrep ####
     # write.csv(detectionHistoryOut,file="DetectionHistory.csv", row.names=FALSE)
-
+    if(nEvOff > 0) {
+        debugDf <- bind_rows(debugDf)
+        debugDf <- debugDf[c('UTC', 'eventId', 'nClicks', 'dutyCycle', 'diveNum', 'diveTime', 'markedOff')]
+        # debugDf$markedOff <- debugDf$eventId %in% whichEvOff
+    } 
+        
     if(plot) {
         # determine duration of encounter w/o angle truncation
         detectDuration= rep(0,nDives)
@@ -937,7 +959,8 @@ createDetectionHistory <- function(ea, maxTime=61.999, meanDepth =1217, sdDepth=
     list(ea=ea,
          dhDf=detHistDf,
          dhMat = detectionHistory,
-         dcMap = colMap)
+         dcMap = colMap,
+         debug = debugDf)
 }
 
 dcToCols <- function(x, maxTime=61.999, snapshot=2) {
