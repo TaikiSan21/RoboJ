@@ -431,7 +431,7 @@ createSimLikeFun <- function(nSim=1e6, model=c('HN', 'C_HN', 'HR'), depthDistr=c
                           param[1] > par1Lim[2] ||
                           param[2] < par2Lim[1] ||
                           param[2] > par2Lim[2]) {
-                           return(rep(-exp(100), length(sRange)))
+                           return(rep(exp(-1000), length(sRange)))
                        }
                        1- (1-exp(-.5*(sRange/param[1])^2))^(exp(param[2]))
                    }
@@ -440,7 +440,7 @@ createSimLikeFun <- function(nSim=1e6, model=c('HN', 'C_HN', 'HR'), depthDistr=c
                    probFun <- function(param) {
                        if(param[1] < par1Lim[1] ||
                           param[1] > par1Lim[2]) {
-                           return(rep(-exp(100), length(sRange)))
+                           return(rep(exp(-1000), length(sRange)))
                        }
                        1- (1-exp(-.5*(sRange/param[1])^2))
                    }
@@ -451,7 +451,7 @@ createSimLikeFun <- function(nSim=1e6, model=c('HN', 'C_HN', 'HR'), depthDistr=c
                           param[1] > par1Lim[2] ||
                           param[2] < par2Lim[1] ||
                           param[2] > par2Lim[2]) {
-                           return(rep(-exp(100), length(sRange)))
+                           return(rep(exp(-1000), length(sRange)))
                        }
                        1 - exp(-(sRange/param[1])^(-param[2]))
                    }
@@ -1448,7 +1448,7 @@ plotOneDetFun <- function(param, model=c('C_HN', 'HN', 'HR'), add=FALSE,
     if(add) {
         lines(x=ranges, y=prob, col=col, lwd=lwd)
     } else {
-        plot(x=ranges, y=prob, type='l', col=col, lwd=lwd)
+        plot(x=ranges, y=prob, type='l', col=col, lwd=lwd, ylim=c(0,1.1))
         if(is.null(title)) {
             title(paste0('Param1: ', round(param[1], 0), ' Param2: ', round(param[2], 2)))
         } else {
