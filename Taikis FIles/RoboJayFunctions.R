@@ -392,7 +392,7 @@ lognorm<- function(n, mean, sd) {
     rlnorm(n, meanlog, sdlog)
 }
 
-createSimLikeFun <- function(nSim=1e6, model=c('HN', 'C_HN'), depthDistr=c('log-normal'),
+createSimLikeFun <- function(nSim=1e6, model=c('HN', 'C_HN', 'HR'), depthDistr=c('log-normal'),
                              meanDepth=1217,sdDepth=354, sdAngleErr=0.59,
                              mainTitle='', truncAngle=NULL, hpDepth=110, truncDist=4e3,
                              par1Lim=c(1e3, 3e3), par2Lim=c(-2, 28)) {
@@ -420,87 +420,124 @@ createSimLikeFun <- function(nSim=1e6, model=c('HN', 'C_HN'), depthDistr=c('log-
     dt <- data.frame(iAngle = factor(c(ceiling(angle), 1:91), levels=1:91))
     # setkey(dt, iAngle)
     # negRangeSq <- -(SRange^2)/2
+    model <- match.arg(model)
     function(detAngle) {
         detAngle <- detAngle[detAngle < truncAngle & !is.na(detAngle)]
         detAngle <- ceiling(detAngle)
-
-        if(model == 'C_HN') {
-            function(param, like=TRUE) {
-                if(param[1] < par1Lim[1] ||
-                   param[1] > par1Lim[2] ||
-                   param[2] < par2Lim[1] ||
-                   param[2] > par2Lim[2]) {
-                    return(-exp(100))
-                }
-                probDet <- 1- (1-exp(-.5*(sRange/param[1])^2))^(exp(param[2]))
-                dt$probDet <- c(probDet, rep(0, 91))
-                sumprob <- group_by(dt, iAngle) %>% summarise(sum=sum(probDet)) %>% .$sum
-                # dt[, prob := probDet]
-                # sumprob <- dt[, .(sum(prob)), keyby=iAngle][[2]]
-                # dt[, prob:= NULL]
-                sumprob <- sumprob / sum(sumprob)
-                # browser()
-                if(like) {
-                    return(sum(log(sumprob[detAngle])))
-                }
-                hRange <- hRange[doTrunc]
-                depth <- depth[doTrunc]
-                # calculate average prob of detection in 100 categories of horizontal range
-                probDetHRange <- rep(NA,100)
-                dx <- maxHRange/100
-                HRindex <- ceiling(100*hRange/maxHRange)
-                HR <- (1:100 - 0.5)*dx
-                HRindex <- factor(HRindex, levels=1:100)
-                probDetHRange <- sapply(split(probDet, HRindex), function(p) mean(p, na.rm=TRUE))
-
-                integralRangeTimesDetProb <- sum(HR[HR<=truncDist] * probDetHRange[HR<=truncDist],na.rm = TRUE)*dx
-                EDR <- sqrt(2*integralRangeTimesDetProb)
-                # calculate the EDR for 39 independent 2-minute detection opportunities for dive
-                probDet39X <- 1 - (1-probDetHRange)^39
-                integralRangeTimesDetProb <- sum(((1:100 - 0.5)*dx) * probDet39X,na.rm = TRUE)*dx
-                EDR_39X <- sqrt(2*integralRangeTimesDetProb)
-
-                list(angleDensity=sumprob,probDetHRange=probDetHRange,EDR=EDR,angle=angle,
-                     probDet=probDet,EDR_39X=EDR_39X, sRange=sRange)
+        switch(model,
+               'C_HN' = {
+                   probFun <- function(param) {
+                       if(param[1] < par1Lim[1] ||
+                          param[1] > par1Lim[2] ||
+                          param[2] < par2Lim[1] ||
+                          param[2] > par2Lim[2]) {
+                           return(rep(-exp(100), length(sRange)))
+                       }
+                       1- (1-exp(-.5*(sRange/param[1])^2))^(exp(param[2]))
+                   }
+               },
+               'HN' = {
+                   probFun <- function(param) {
+                       if(param[1] < par1Lim[1] ||
+                          param[1] > par1Lim[2]) {
+                           return(rep(-exp(100), length(sRange)))
+                       }
+                       1- (1-exp(-.5*(sRange/param[1])^2))
+                   }
+               },
+               'HR' = {
+                   probFun <- function(param) {
+                       if(param[1] < par1Lim[1] ||
+                          param[1] > par1Lim[2] ||
+                          param[2] < par2Lim[1] ||
+                          param[2] > par2Lim[2]) {
+                           return(rep(-exp(100), length(sRange)))
+                       }
+                       1 - exp(-(sRange/param[1])^(-param[2]))
+                   }
+               }
+        )
+        function(param, like=TRUE) {
+            probDet <- probFun(param)
+            dt$probDet <- c(probDet, rep(0, 91))
+            sumprob <- group_by(dt, iAngle) %>% summarise(sum=sum(probDet)) %>% .$sum
+            # dt[, prob := probDet]
+            # sumprob <- dt[, .(sum(prob)), keyby=iAngle][[2]]
+            # dt[, prob:= NULL]
+            sumprob <- sumprob / sum(sumprob)
+            # browser()
+            if(like) {
+                return(sum(log(sumprob[detAngle])))
             }
-        } else {
-            function(param, like=TRUE) {
-                if(param[1] < par1Lim[1] ||
-                   param[1] > par1Lim[2]) {
-                    return(-exp(100))
-                }
-                probDet <- 1- (1-exp(-.5*(sRange/param[1])^2))
-                dt$probDet <- c(probDet, rep(0, 91))
-                sumprob <- group_by(dt, iAngle) %>% summarise(sum=sum(probDet)) %>% .$sum
-                # dt[, prob := probDet]
-                # sumprob <- dt[, .(sum(prob)), keyby=iAngle][[2]]
-                # dt[, prob:= NULL]
-                sumprob <- sumprob / sum(sumprob)
-                # browser()
-                if(like) {
-                    return(sum(log(sumprob[detAngle])))
-                }
-                hRange <- hRange[doTrunc]
-                depth <- depth[doTrunc]
-                # calculate average prob of detection in 100 categories of horizontal range
-                probDetHRange <- rep(NA,100)
-                dx <- maxHRange/100
-                HRindex <- ceiling(100*hRange/maxHRange)
-                HR <- (1:100 - 0.5)*dx
-                HRindex <- factor(HRindex, levels=1:100)
-                probDetHRange <- sapply(split(probDet, HRindex), function(p) mean(p, na.rm=TRUE))
-
-                integralRangeTimesDetProb <- sum(HR[HR<=truncDist] * probDetHRange[HR<=truncDist],na.rm = TRUE)*dx
-                EDR <- sqrt(2*integralRangeTimesDetProb)
-                # calculate the EDR for 39 independent 2-minute detection opportunities for dive
-                probDet39X <- 1 - (1-probDetHRange)^39
-                integralRangeTimesDetProb <- sum(((1:100 - 0.5)*dx) * probDet39X,na.rm = TRUE)*dx
-                EDR_39X <- sqrt(2*integralRangeTimesDetProb)
-
-                list(angleDensity=sumprob,probDetHRange=probDetHRange,EDR=EDR,angle=angle,
-                     probDet=probDet,EDR_39X=EDR_39X, sRange=sRange)
-            }
+            hRange <- hRange[doTrunc]
+            depth <- depth[doTrunc]
+            # calculate average prob of detection in 100 categories of horizontal range
+            probDetHRange <- rep(NA,100)
+            dx <- maxHRange/100
+            HRindex <- ceiling(100*hRange/maxHRange)
+            HR <- (1:100 - 0.5)*dx
+            HRindex <- factor(HRindex, levels=1:100)
+            probDetHRange <- sapply(split(probDet, HRindex), function(p) mean(p, na.rm=TRUE))
+            
+            integralRangeTimesDetProb <- sum(HR[HR<=truncDist] * probDetHRange[HR<=truncDist],na.rm = TRUE)*dx
+            EDR <- sqrt(2*integralRangeTimesDetProb)
+            # calculate the EDR for 39 independent 2-minute detection opportunities for dive
+            probDet39X <- 1 - (1-probDetHRange)^39
+            integralRangeTimesDetProb <- sum(((1:100 - 0.5)*dx) * probDet39X,na.rm = TRUE)*dx
+            EDR_39X <- sqrt(2*integralRangeTimesDetProb)
+            
+            list(angleDensity=sumprob,probDetHRange=probDetHRange,EDR=EDR,angle=angle,
+                 probDet=probDet,EDR_39X=EDR_39X, sRange=sRange)
         }
+        # if(model == 'C_HN') {
+        #     function(param, like=TRUE) {
+        #         if(param[1] < par1Lim[1] ||
+        #            param[1] > par1Lim[2] ||
+        #            param[2] < par2Lim[1] ||
+        #            param[2] > par2Lim[2]) {
+        #             return(-exp(100))
+        #         }
+        #         probDet <- 1- (1-exp(-.5*(sRange/param[1])^2))^(exp(param[2]))
+        #         
+        #     }
+        # } else {
+        #     function(param, like=TRUE) {
+        #         if(param[1] < par1Lim[1] ||
+        #            param[1] > par1Lim[2]) {
+        #             return(-exp(100))
+        #         }
+        #         probDet <- 1- (1-exp(-.5*(sRange/param[1])^2))
+        #         dt$probDet <- c(probDet, rep(0, 91))
+        #         sumprob <- group_by(dt, iAngle) %>% summarise(sum=sum(probDet)) %>% .$sum
+        #         # dt[, prob := probDet]
+        #         # sumprob <- dt[, .(sum(prob)), keyby=iAngle][[2]]
+        #         # dt[, prob:= NULL]
+        #         sumprob <- sumprob / sum(sumprob)
+        #         # browser()
+        #         if(like) {
+        #             return(sum(log(sumprob[detAngle])))
+        #         }
+        #         hRange <- hRange[doTrunc]
+        #         depth <- depth[doTrunc]
+        #         # calculate average prob of detection in 100 categories of horizontal range
+        #         probDetHRange <- rep(NA,100)
+        #         dx <- maxHRange/100
+        #         HRindex <- ceiling(100*hRange/maxHRange)
+        #         HR <- (1:100 - 0.5)*dx
+        #         HRindex <- factor(HRindex, levels=1:100)
+        #         probDetHRange <- sapply(split(probDet, HRindex), function(p) mean(p, na.rm=TRUE))
+        # 
+        #         integralRangeTimesDetProb <- sum(HR[HR<=truncDist] * probDetHRange[HR<=truncDist],na.rm = TRUE)*dx
+        #         EDR <- sqrt(2*integralRangeTimesDetProb)
+        #         # calculate the EDR for 39 independent 2-minute detection opportunities for dive
+        #         probDet39X <- 1 - (1-probDetHRange)^39
+        #         integralRangeTimesDetProb <- sum(((1:100 - 0.5)*dx) * probDet39X,na.rm = TRUE)*dx
+        #         EDR_39X <- sqrt(2*integralRangeTimesDetProb)
+        # 
+        #         list(angleDensity=sumprob,probDetHRange=probDetHRange,EDR=EDR,angle=angle,
+        #              probDet=probDet,EDR_39X=EDR_39X, sRange=sRange)
+        #     }
+        # }
     }
 }
 
@@ -514,7 +551,7 @@ newEstDetFunction <- function(eventAngles,
                               sdAngleErr = 0.59,
                               depthDistr = 'log-normal',
                               range = c(750, 3000),
-                              model = 'C_HN',
+                              model = c('C_HN', 'HN', 'HR'),
                               outDir= '.',
                               doJackknife = FALSE,
                               jk_nSamples = 20,
@@ -526,6 +563,7 @@ newEstDetFunction <- function(eventAngles,
     truncAngle<- atan(truncDist/(meanDepth-hpDepth))*180/pi
 
     eventAngles<- eventAngles[(eventAngles$nClicks>2),]
+    model <- match.arg(model)
     # Limit sample to SpeciesID
     if(!is.null(species)) {
         spCol <- c('species', 'eventType')[c('species', 'eventType') %in% colnames(eventAngles)][1]
@@ -573,22 +611,34 @@ newEstDetFunction <- function(eventAngles,
         }
         obsDetAngles<- obsDetAngles[obsDetAngles < truncAngle]
         nSample<- length(obsDetAngles)
-        par2Lim <- if(model == 'C_HN') {
-            c(-2, 28)
-        } else{
-            0
-        }
+        par2Lim <- switch(model,
+                     'C_HN' = c(-2, 28),
+                     'HN' = 0,
+                     'HR' = c(.01, 50)
+        )
+ 
         thisLikeBase <- createSimLikeFun(nSim=nSim, model=model, depthDistr=depthDistr,
                                          meanDepth=meanDepth, sdDepth=sdDepth, sdAngleErr=sdAngleErr,
                                          mainTitle=mainTitle, truncAngle=truncAngle, hpDepth=hpDepth,
                                          truncDist=truncDist, par1Lim=range(range), par2Lim=par2Lim)
         thisLikeFun <- thisLikeBase(obsDetAngles)
-        opResult <- if(model == 'C_HN') {
-            optim(c(1e3, 1), fn=thisLikeFun, method='Nelder-Mead', hessian=FALSE,
-                  control=list(fnscale=-1, parscale=c(mean(range(range)), mean(range(par2Lim)))))
-        } else {
-            optim(c(1e3, 1), fn=thisLikeFun, method='Brent', upper=truncDist, lower=500, hessian=FALSE, control=list(fnscale=-1))
-        }
+        opResult <- switch(
+            model,
+            'C_HN' = optim(c(1e3, 1), fn=thisLikeFun, method='Nelder-Mead', hessian=FALSE,
+                           control=list(fnscale=-1, parscale=c(mean(range(range)), mean(range(par2Lim))))),
+            'HN' =  optim(c(1e3), fn=thisLikeFun, method='Brent', upper=truncDist, lower=500, hessian=FALSE,
+                          control=list(fnscale=-1)),
+            'HR' = optim(c(1e3, 1), fn=thisLikeFun, method='Nelder-Mead', hessian=FALSE,
+                         control=list(fnscale=-1, parscale=c(mean(range(range)), mean(range(par2Lim)))))
+        )
+        
+        # opResult <- if(model == 'C_HN') {
+        #     optim(c(1e3, 1), fn=thisLikeFun, method='Nelder-Mead', hessian=FALSE,
+        #           control=list(fnscale=-1, parscale=c(mean(range(range)), mean(range(par2Lim)))))
+        # } else {
+        #     optim(c(1e3, 1), fn=thisLikeFun, method='Brent', upper=truncDist, lower=500, hessian=FALSE,
+        #           control=list(fnscale=-1))
+        # }
         outVals <- thisLikeFun(opResult$par, like=FALSE)
 
         maxL_EDR<- outVals$EDR
@@ -631,7 +681,8 @@ newEstDetFunction <- function(eventAngles,
                         gzero = hRangeDetProbDF$DetProb[1],
                         hRangeDetProbDF=hRangeDetProbDF,
                         angle=obsDetAngles,
-                        likeFun=thisLikeBase)
+                        likeFun=thisLikeBase,
+                        model=model)
         if(doJackknife) {
             jk_EDR<- array(1)
             jk_EDR_39X<- array(1)
@@ -1382,14 +1433,18 @@ fast_intlen <- function(int1, int2) {
     spans
 }
 
-plotOneDetFun <- function(param, model=c('C_HN', 'HN'), add=FALSE,
+plotOneDetFun <- function(param, model=c('C_HN', 'HN', 'HR'), add=FALSE,
                           col='black', lwd=1, title=NULL, truncDist=4e3) {
     model <- match.arg(model)
     if(model == 'HN') {
         param[2] <- 0
     }
     ranges <- seq(from=0, to=truncDist, by=10)
-    prob <- 1 - (1-exp(-.5*(ranges/param[1])^2))^(exp(param[2]))
+    if(model == 'HR') {
+        prob <- 1 - exp(-(ranges/param[1])^(-param[2]))
+    } else {
+        prob <- 1 - (1-exp(-.5*(ranges/param[1])^2))^(exp(param[2]))
+    }
     if(add) {
         lines(x=ranges, y=prob, col=col, lwd=lwd)
     } else {
@@ -1406,7 +1461,11 @@ plotDetFun <- function(detFun, lwd=1, truncDist=4e3, title=NULL) {
     colors <- c('black', 'red', 'blue', 'darkgreen', 'purple')
     for(i in seq_along(detFun)) {
         params <- detFun[[i]]$maxLikeParam
-        model <- ifelse(length(params) == 2, 'C_HN', 'HN')
+        
+        model <- detFun[[i]]$model
+        if(is.null(model)) {
+            model <- ifelse(length(params) == 2, 'C_HN', 'HN')
+        }
         plotOneDetFun(params, model, add= i>1, col=colors[i], lwd=lwd, title=title, truncDist=truncDist)
     }
 }
