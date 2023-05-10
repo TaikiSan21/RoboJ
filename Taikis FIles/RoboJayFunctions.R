@@ -166,7 +166,7 @@ doAngleCorrection <- function(x, sspList, hpDepth=110, animalDepth=1000) {
         newdata <- data.frame(depth = 0:max(s$depth))
         predicted <- as.numeric(suppressWarnings(predict.gam(gamout, newdata=newdata)))
         newdata$soundSpeed <- predicted
-        angles <- 5:85
+        angles <- 1:87
         # hpDepth <- 110
         # animalDepth <- 1000 + 1
         rt <- raytrace(0, hpDepth, angles, 7, zz=newdata$depth, cc=newdata$soundSpeed, plot = FALSE, progress=FALSE)
@@ -341,11 +341,16 @@ formatEventSummary <- function(x, recorderInfo=NULL, snapshot=2, pascal=FALSE) {
         modalAngle <- histOut$mids[findMaxFreq]
         #Calculate mean detection angle for angles less than 88 deg if Modal Angles is less than 88 det
         meanAngle= NA
-        if(modalAngle < 88) {
-            meanAngle= atan(mean(tan(angles[angles<88]*pi/180),na.rm=TRUE)) * 180 / pi  #average angles is within 2 deg of mode
+        useAngles <- angles < 88 & e$correction != 0
+        if(modalAngle < 88 & any(useAngles)) {
+            meanAngle= atan(mean(tan(angles[useAngles]*pi/180),na.rm=TRUE)) * 180 / pi  #average angles is within 2 deg of mode
         }
-        # if(any(is.na(MeanAngle) & !is.na(ModalAngle))) {
+        # if(is.na(meanAngle)) {
+        #     plot(angles)
         #     browser()
+        # }
+        # if(!is.na(meanAngle) && abs(modalAngle-meanAngle) > 3) {
+        #     plot(x=e$angleCorrected)
         # }
         e$modalAngle <- modalAngle
         e$meanAngle <- meanAngle
