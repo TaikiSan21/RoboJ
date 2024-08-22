@@ -4,6 +4,7 @@ library(PAMpal)
 library(dplyr)
 library(mgcv)
 library(PAMmisc)
+library(readxl)
 # Updated 4-20-2022 7pm
 formatClickDf <- function(x, stationPattern='(.*)', pascal=FALSE) {
     clicks <- getClickData(x)
@@ -447,7 +448,7 @@ createSimLikeFun <- function(nSim=1e6, model=c('HN', 'C_HN', 'HR'), depthDistr=c
                           param[1] > par1Lim[2]) {
                            return(rep(exp(-1000), length(sRange)))
                        }
-                       1- (1-exp(-.5*(sRange/param[1])^2))
+                       exp(-.5*(sRange/param[1])^2)
                    }
                },
                'HR' = {
@@ -563,6 +564,7 @@ newEstDetFunction <- function(eventAngles,
                               nSim = 1e7,
                               verbose=FALSE,
                               progress=TRUE,
+                              simSpread=FALSE,
                               ...) {
 
     truncAngle<- atan(truncDist/(meanDepth-hpDepth))*180/pi
@@ -599,7 +601,18 @@ newEstDetFunction <- function(eventAngles,
 
         # Observed detection angles are valid average angles
         obsDetAngles<- obsDetAngles[!is.na(obsDetAngles)]
-
+        if(simSpread) {
+            simAngles <- vector('list', length=length(obsDetAngles))
+            for(s in seq_along(simAngles)) {
+                if(runif(1) > .33) {
+                    simAngles[[s]] <- obsDetAngles[s]
+                    next
+                }
+                simAngles[[s]] <- rnorm(3, mean=obsDetAngles[s], sd=5)
+            }
+            obsDetAngles <- unlist(simAngles)
+        }
+        
         # plot distribution of detection angles before truncation
         if(verbose) {
             cat(" Tot number of files w/ ",species," and 3 or more clicks = ",length(obsDetAngles))
@@ -663,10 +676,11 @@ newEstDetFunction <- function(eventAngles,
             lines(1:91,cdf_obsDetAngless,col="red",lwd=3)
 
 
-            plot((1:100)*80,outVals$probDetHRange,type="l",lwd=5,main=mainTitle,xlab="Horizontal Range (m)",
-                 ylab="Probability of Detection",ylim=c(0,1.05),xlim=c(0,6000))
-            plot((1:100)*80/1000,outVals$probDetHRange,type="l",lwd=5,main=NULL,xlab="Horizontal Range (km)",
-                 ylab="Probability of Detection",ylim=c(0,1.05),xlim=c(0,5))
+            # plot((1:100)*80,outVals$probDetHRange,type="l",lwd=5,main=mainTitle,xlab="Horizontal Range (m)",
+            #      ylab="Probability of Detection",ylim=c(0,1.05),xlim=c(0,6000))
+            # plot((1:100)*80/1000,outVals$probDetHRange,type="l",lwd=5,main=NULL,xlab="Horizontal Range (km)",
+            #      ylab="Probability of Detection",ylim=c(0,1.05),xlim=c(0,5))
+            plotOneDetFun(opResult$par, model=model, truncDist=truncDist)
             cat(" Sample size of detection angles (#snapshots):",nSample,"\n")
             cat(" Detection function for: ",mainTitle,"\n")
             cat(" Maximum likelihood estimate of EDR:",maxL_EDR/1000,"km \n")
@@ -1134,22 +1148,48 @@ addRecorderInfo <- function(x, info, pascal=FALSE) {
     x
 }
 
+# NEED CHECK IF INTERVAL IS TIME BETWEEN STARTS OR TIME OFF CURRENTLY MIGHT BE
 formatDeployDetails <- function(x, format=c('%m/%d/%Y %H:%M:%OS', '%m-%d-%Y %H:%M:%OS',
-                                            '%Y/%m/%d %H:%M:%OS', '%Y-%m-%d %H:%M:%OS')) {
+                                            '%Y/%m/%d %H:%M:%OS', '%Y-%m-%d %H:%M:%OS'),
+                                sheet='deployDetails') {
     if(is.character(x)) {
-        x <- read.csv(x, stringsAsFactors = FALSE)
+        if(grepl('csv$', x)) {
+            x <- read.csv(x, stringsAsFactors = FALSE)
+            for(t in c('Data_Start', 'Data_End')) {
+                x[[t]] <- gsub(' [[:alpha:]]+', '', x[[t]])
+                x[[t]] <- lubridate::parse_date_time(x[[t]], orders = format, tz='UTC', exact=TRUE, truncated = 2)
+            }
+        } else if(grepl('xlsx$', x)) {
+            x <- read_xlsx(x, sheet=sheet, col_types='list')
+            x$Project <- as.character(x$Project)
+            x$Type <- as.character(x$Type)
+            for(t in c('Data_Start', 'Data_End')) {
+                x[[t]] <- suppressWarnings(as.POSIXct(as.numeric(unlist(x[[t]])), origin='1970-01-01 00:00:00', tz='UTC'))
+            }
+        }
     }
     x <- select(x, all_of(c('Project', 'station'='DeploymentID', 'recorder'='Type',
                             'deployTime'='Data_Start', 'retrTime'='Data_End',
                             'dutyOn'='RecordingDuration_m', 'dutyOff'='RecordingInterval_m')))
     x$station <- as.character(x$station)
+    x$dutyOn <- as.character(x$dutyOn)
+    x$dutyOff <- as.character(x$dutyOff)
+    x$dutyOff[x$dutyOn == 'Continuous'] <- '1'
+    x$dutyOn[x$dutyOn == 'Continuous'] <- '1'
+    x$dutyOff <- round(as.numeric(x$dutyOff) - as.numeric(x$dutyOn), 0)
+    if(any(x$dutyOff < 0)) {
+        whichNeg <- which(x$dutyOff < 0)
+        warning('Deployments ', paste0(x$station[whichNeg], collapse=', '), ' were calculated to have',
+                ' negative "Off" cycles (RecordingInterval - RecordingDuration).')
+        
+    }
     x$dutyCycle <- paste0(x$dutyOn, '/', x$dutyOff)
     x$dutyOn <- NULL
     x$dutyOff <- NULL
-    for(t in c('deployTime', 'retrTime')) {
-        x[[t]] <- gsub(' [[:alpha:]]+', '', x[[t]])
-        x[[t]] <- lubridate::parse_date_time(x[[t]], orders = format, tz='UTC', exact=TRUE, truncated = 2)
-    }
+    # for(t in c('deployTime', 'retrTime')) {
+    #     x[[t]] <- gsub(' [[:alpha:]]+', '', x[[t]])
+    #     x[[t]] <- lubridate::parse_date_time(x[[t]], orders = format, tz='UTC', exact=TRUE, truncated = 2)
+    # }
     x
 }
 
